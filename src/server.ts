@@ -1,5 +1,7 @@
 import express from 'express'
-import { agent } from './setup.js'; // Importiere den Agenten aus setup.ts
+import { agent, getOrCreateDID } from './setup.js'; // Importiere den Agenten aus setup.ts
+
+const ISSUER_DID = await getOrCreateDID();
 
 const app = express();
 const PORT = 3000;
@@ -28,21 +30,39 @@ app.post('/verify-credential', async (req, res) => {
 app.post('/issue-credential', async (req, res) => {
   try {
     const { subject, claims } = req.body;
+
+    // Generiere ein Verifiable Credential
     const credential = await agent.createVerifiableCredential({
       credential: {
-        issuer: { id: 'did:ethr:yourDID' },
+        issuer: { id: ISSUER_DID },
         subject,
         type: ['VerifiableCredential'],
         issuanceDate: new Date().toISOString(),
-        credentialSubject: claims,
+        credentialSubject: {
+          id: subject,
+          ...claims,
+        },
+        '@context': ['https://www.w3.org/2018/credentials/v1'],
       },
-      proofFormat: 'jwt', // Falls JWT als Format verwendet wird
+      proofFormat: 'jwt', // JWT-Proof verwenden
     });
+
     res.json(credential);
   } catch (error) {
-    if (error instanceof Error) {
-      res.status(500).json({ error: (error as Error).message });
-    }
+    console.error('Error issuing credential:', (error as Error).message);
+    res.status(500).json({ error: 'Credential issuance failed' });
+  }
+});
+
+app.post('/create-did', async (req, res) => {
+  try {
+    const identifier = await agent.didManagerCreate({
+      provider: 'did:ethr:sepolia', // Netzwerk hier anpassen, falls notwendig
+    });
+    res.json(identifier);
+  } catch (error) {
+    console.error('Error creating DID:', (error as Error).message);
+    res.status(500).json({ error: 'DID creation failed' });
   }
 });
 
