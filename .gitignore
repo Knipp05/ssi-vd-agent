@@ -1,6 +1,3 @@
-# Node.js
-node_modules/
-
 # Logs
 logs
 *.log
@@ -8,35 +5,49 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Environment variables
-.env
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
 
 # Dependency directories
+node_modules/
 jspm_packages/
 
-# TypeScript
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build output
 dist/
 build/
+
+# Cache directories
+.cache/
+.nyc_output/
+coverage/
 *.tsbuildinfo
 
-# VSCode settings
+# IDE-specific files
+.idea/
 .vscode/
+*.swp
+*.swo
+*.bak
 
-# MacOS system files
+# OS-specific files
 .DS_Store
-
-# Linux system files
-*~
-
-# Windows system files
 Thumbs.db
+desktop.ini
 
-# npm package lock files
+# Optional lockfiles
+package-lock.json
 yarn.lock
 
-#database files
-database.sqlite
-
-#js files
-src/server.js
-src/setup.js
+# Temporary files
+*.tmp
+*.temp
