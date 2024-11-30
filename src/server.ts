@@ -2,6 +2,9 @@ import { IndyVdrDidCreateOptions } from '@credo-ts/indy-vdr';
 import agent from './agent_setup';
 import express, { Request, Response } from 'express';
 
+const port = process.env.PORT || 3000
+const endorserDID = process.env.ENDORSER_DID || ''
+
 // EbCwTjMzufirq79KkiwdES - Endorser DID Namespace-Identifier
 // ~Rv6XsWnsnxxJ3RqcanZfKW - Verkey
 
@@ -14,7 +17,7 @@ async function createLocalDid() {
       services: undefined,
       useEndpointAttrib: undefined,
       verkey: undefined,
-      endorserDid: 'did:indy:bcovrin:test:EbCwTjMzufirq79KkiwdES',
+      endorserDid: endorserDID,
       endorserMode: 'internal',
       endorsedTransaction: undefined
     }
@@ -23,9 +26,15 @@ async function createLocalDid() {
   return didResult;
 }
 
+async function issueCredential() {
+  const credential = {
+    
+  }
+}
+
   // Erstelle eine Instanz der Express-Anwendung
   const app = express();
-  const PORT = 3000;
+  const PORT = port;
   
   // Middleware zum Parsen von JSON-Requests
   app.use(express.json());
