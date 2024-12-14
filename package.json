@@ -4,24 +4,29 @@
   "main": "index.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/agent_setup.js"
   },
+  "type": "module",
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "devDependencies": {
+    "@types/cors": "^2.8.17",
     "@types/node": "^22.9.1",
     "typescript": "^5.6.3"
   },
   "dependencies": {
+    "@credo-ts/anoncreds": "^0.5.13",
     "@credo-ts/askar": "0.5.13",
     "@credo-ts/core": "^0.5.13",
     "@credo-ts/indy-vdr": "^0.5.13",
     "@credo-ts/node": "^0.5.13",
+    "@credo-ts/openid4vc": "^0.5.13",
+    "@hyperledger/anoncreds-nodejs": "^0.2.4",
     "@hyperledger/aries-askar-nodejs": "0.2.3",
     "@hyperledger/indy-vdr-nodejs": "^0.2.2",
-    "dotenv": "^16.4.5",
-    "tweetnacl": "^1.0.3"
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5"
   }
 }

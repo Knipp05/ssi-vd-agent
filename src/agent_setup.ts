@@ -1,30 +1,59 @@
-import { InitConfig, Agent, DidsModule, KeyType, TypedArrayEncoder, CredentialsModule, V2CredentialProtocol, W3cCredentialSchema, W3cJsonLdVerifiableCredential, W3cCredential } from '@credo-ts/core';
+import { InitConfig, Agent, DidsModule, CredentialsModule, V2CredentialProtocol, JwaSignatureAlgorithm, KeyDidCreateOptions, KeyType, TypedArrayEncoder } from '@credo-ts/core';
 import { agentDependencies } from '@credo-ts/node';
-import { HttpOutboundTransport, WsOutboundTransport } from '@credo-ts/core';
-import { HttpInboundTransport } from '@credo-ts/node';
 import { AskarModule } from '@credo-ts/askar';
 import { ariesAskar } from '@hyperledger/aries-askar-nodejs';
-import { IndyVdrIndyDidRegistrar, IndyVdrIndyDidResolver, IndyVdrModule } from '@credo-ts/indy-vdr';
+import { IndyVdrAnonCredsRegistry, IndyVdrIndyDidRegistrar, IndyVdrIndyDidResolver, IndyVdrModule } from '@credo-ts/indy-vdr';
 import { indyVdr } from '@hyperledger/indy-vdr-nodejs';
-import nacl from 'tweetnacl'
 import fs from 'fs';
-import * as dotenv from 'dotenv'
-import { W3cJsonLdCredentialService } from '@credo-ts/core/build/modules/vc/data-integrity/W3cJsonLdCredentialService';
+import { anoncreds } from '@hyperledger/anoncreds-nodejs';
+import { AnonCredsCredentialFormatService, AnonCredsModule, LegacyIndyCredentialFormatService } from '@credo-ts/anoncreds';
+import { OpenId4VcIssuanceSessionStateChangedEvent, OpenId4VcIssuerEvents, OpenId4VcIssuerModule, OpenId4VcVerifierModule } from '@credo-ts/openid4vc';
+import express, { Router } from 'express'
+import dotenv from 'dotenv';
 
 dotenv.config();
 
-const seed = process.env.SEED || ''
-const endorserDID = process.env.ENDORSER_DID || ''
+const PORT = process.env.PORT || 3000;
+const ENDORSER_DID = process.env.ENDORSER_DID || '';
+const SEED = process.env.SEED || '';
 
 const genesisTransactions = fs.readFileSync('./bcovrin_genesis.txn', 'utf8');
 
 const config: InitConfig = {
-  label: 'bcovrin-agent',
+  label: 'SSI Prototype',
   walletConfig: {
     id: 'my-wallet',
     key: 'secure-wallet-key-123456',
   }
 };
+
+const verifierRouter = Router()
+const issuerRouter = Router()
+
+const app = express()
+app.use('/oid4vci', issuerRouter)
+app.use('/siop', verifierRouter)
+
+async function importDID() {
+  try {
+    const mySeed = TypedArrayEncoder.fromString(SEED);
+
+    await agent.dids.import({
+      did: ENDORSER_DID,
+      privateKeys: [
+        {
+          keyType: KeyType.Ed25519,
+          privateKey: mySeed,
+        },
+      ],
+      overwrite: true,
+    });
+
+    console.log('DID erfolgreich importiert!');
+  } catch (error) {
+    console.error('Fehler beim Importieren des DID:', error);
+  }
+}
 
 const agent = new Agent({
   config,
@@ -35,7 +64,7 @@ const agent = new Agent({
       resolvers: [new IndyVdrIndyDidResolver()],
     }),
     askar: new AskarModule({
-      ariesAskar,
+      ariesAskar, 
     }),
     indyVdr: new IndyVdrModule({
       indyVdr,
@@ -48,54 +77,83 @@ const agent = new Agent({
         },
       ],
     }),
+    openId4VcIssuer: new OpenId4VcIssuerModule({
+      baseUrl: 'http://127.0.0.1:3000/oid4vci',
+      router: issuerRouter,
+      endpoints: {
+        credential: {
+          credentialRequestToCredentialMapper: async () => {
+            throw new Error('Not implemented')
+          }
+        }
+      }
+    }),
+    openId4VcVerifier: new OpenId4VcVerifierModule({
+      baseUrl: 'http://127.0.0.1:3000/siop',
+      router: verifierRouter,
+    }),
     credentials: new CredentialsModule({
       credentialProtocols: [
         new V2CredentialProtocol({
-          credentialFormats: []
+          credentialFormats: [new LegacyIndyCredentialFormatService(), new AnonCredsCredentialFormatService()]
         })
       ]
+    }),
+    anoncreds: new AnonCredsModule({
+      registries: [new IndyVdrAnonCredsRegistry()],
+      anoncreds
     })
   },
 });
 
-agent.registerOutboundTransport(new HttpOutboundTransport());
-agent.registerOutboundTransport(new WsOutboundTransport());
-agent.registerInboundTransport(new HttpInboundTransport({ port: 3000 }));
+await agent.initialize();
+console.log('Agent erfolgreich initialisiert!');
 
-async function importDID() {
-  try {
-    // Seed (32 Bytes)
-    const mySeed = TypedArrayEncoder.fromString(seed);
-
-    // Importiere den DID und den Private Key in den Agenten
-    await agent.dids.import({
-      did: endorserDID,
-      privateKeys: [
-        {
-          keyType: KeyType.Ed25519,
-          privateKey: mySeed,
-        },
-      ],
-      overwrite: true
-    });
-
-    console.log('DID erfolgreich importiert!');
-
-    // Überprüfe, ob der DID importiert wurde
-    const createdDids = await agent.dids.getCreatedDids();
-    console.log('Erstellte DIDs:', createdDids);
-  } catch (error) {
-    console.error('Fehler beim Importieren des DIDs:', error);
+const existingDIDs = await agent.dids.getCreatedDids();
+  if (existingDIDs.length === 0) {
+    await importDID();
   }
-}
+console.log('Erstellte DIDs:', existingDIDs);
 
-agent
-  .initialize()
-  .then(() => {
-    console.log('Agent erfolgreich initialisiert!', importDID());
-  })
-  .catch((e) => {
-    console.error('Fehler beim Initialisieren des Agents:', e);
-  });
+const openid4vcIssuer = await agent.modules.openId4VcIssuer.createIssuer({
+  display: [
+    {
+      name: 'Test Issuer',
+      description: 'This is my SSI Prototype test issuer',
+      text_color: '#000000',
+      background_color: '#FFFFFF',
+    }
+  ],
+  credentialsSupported: [
+    {
+      format: 'vc+sd-jwt',
+      vct: 'Test Issuer',
+      id: 'Test Issuer',
+      cryptographic_binding_methods_supported: ['did:indy'],
+      cryptographic_suites_supported: [JwaSignatureAlgorithm.ES256]
+    }
+  ]
+})
+
+const { credentialOffer, issuanceSession } = await agent.modules.openId4VcIssuer.createCredentialOffer({
+  issuerId: openid4vcIssuer.issuerId,
+  offeredCredentials: ['Test Issuer'],
+  preAuthorizedCodeFlowConfig: {
+    userPinRequired: false
+  },
+})
+
+agent.events.on<OpenId4VcIssuanceSessionStateChangedEvent>(
+  OpenId4VcIssuerEvents.IssuanceSessionStateChanged,
+  (event) => {
+    if (event.payload.issuanceSession.id === issuanceSession.id) {
+      console.log('Issuance session state changed to ', event.payload.issuanceSession.state)
+    }
+  }
+)
+
+app.listen(3000, () => {
+  console.log(`Server läuft auf http://localhost:3000`)
+})
 
 export default agent;
