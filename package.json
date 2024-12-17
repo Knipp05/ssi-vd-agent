@@ -1,10 +1,10 @@
 {
   "name": "ssi-vd-agent",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/agent_setup.js"
+    "start": "node dist/server.js"
   },
   "type": "module",
   "keywords": [],
@@ -27,6 +27,7 @@
     "@hyperledger/aries-askar-nodejs": "0.2.3",
     "@hyperledger/indy-vdr-nodejs": "^0.2.2",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2"
   }
 }

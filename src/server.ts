@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, Router } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { 
@@ -9,11 +9,10 @@ import {
   DidExchangeState, 
   KeyType, 
   TypedArrayEncoder,
-  HttpOutboundTransport,
-  WsOutboundTransport 
+  JwaSignatureAlgorithm
 } from '@credo-ts/core';
-import { HttpInboundTransport } from '@credo-ts/node';
-import agent from './agent_setup';
+import { initializeAgent } from './agent_setup.js';
+import { OpenId4VcIssuanceSessionStateChangedEvent, OpenId4VcIssuerEvents } from '@credo-ts/openid4vc';
 
 dotenv.config();
 
@@ -21,32 +20,59 @@ const PORT = process.env.PORT || 3000;
 const ENDORSER_DID = process.env.ENDORSER_DID || '';
 const SEED = process.env.SEED || '';
 
-// Initialisiere Agent
-agent.registerOutboundTransport(new HttpOutboundTransport());
-agent.registerOutboundTransport(new WsOutboundTransport());
-agent.registerInboundTransport(new HttpInboundTransport({ port: Number(PORT) }));
-
 // Verbindungen speichern
 const activeConnections: { [id: string]: { state: string, connectionRecord: any } } = {};
 
-// Funktion zur Initialisierung des Agenten und Import der DID
-async function initializeAgent() {
-  try {
-    await agent.initialize();
-    console.log('Agent erfolgreich initialisiert!');
+// Funktion: Erstelle eine neue Einladung
+const createNewInvitation = async (agent: Agent) => {
+  const outOfBandRecord = await agent.oob.createInvitation()
 
-    const existingDIDs = await agent.dids.getCreatedDids();
-    if (existingDIDs.length === 0) {
-      await importDID();
-    }
-
-    console.log('Erstellte DIDs:', existingDIDs);
-  } catch (error) {
-    console.error('Fehler beim Initialisieren des Agenten:', error);
+  return {
+        
+    invitationUrl: outOfBandRecord.outOfBandInvitation.toUrl({domain: 'https://9f29-2003-e9-370d-f00-8449-df89-c04a-9340.ngrok-free.app' }),
+    outOfBandRecord
   }
 }
 
-// Funktion: Importiere eine DID
+// Funktion: Verbindungen überwachen
+
+
+const verifierRouter = Router()
+const issuerRouter = Router()
+
+const agent = await initializeAgent(issuerRouter, verifierRouter)
+
+/* const schemaResult = await agent.modules.anoncreds.registerSchema({
+  schema: {
+    attrNames: ['name'],
+    issuerId: ENDORSER_DID,
+    name: 'Example Schema to register',
+    version: '1.0.0',
+  },
+  options: {},
+})
+
+if (schemaResult.schemaState.state === 'failed') {
+  throw new Error(`Error creating schema: ${schemaResult.schemaState.reason}`)
+}
+
+const credentialDefinitionResult = await agent.modules.anoncreds.registerCredentialDefinition({
+  credentialDefinition: {
+    tag: 'default',
+    issuerId: ENDORSER_DID,
+    schemaId: schemaResult.schemaState.schemaId || '',
+  },
+  options: {
+    supportRevocation: false,
+  },
+})
+
+if (credentialDefinitionResult.credentialDefinitionState.state === 'failed') {
+  throw new Error(
+    `Error creating credential definition: ${credentialDefinitionResult.credentialDefinitionState.reason}`
+  )
+} */
+
 async function importDID() {
   try {
     const mySeed = TypedArrayEncoder.fromString(SEED);
@@ -68,60 +94,71 @@ async function importDID() {
   }
 }
 
-// Funktion: Erstelle eine neue Einladung
-async function createInvitation() {
-  try {
-    const outOfBandRecord = await agent.oob.createInvitation();
-
-    return {
-      invitationUrl: outOfBandRecord.outOfBandInvitation.toUrl({
-        domain: 'https://9f29-2003-e9-370d-f00-8449-df89-c04a-9340.ngrok-free.app', // Ersetze durch deine Domain
-      }),
-      outOfBandRecord,
-    };
-  } catch (error) {
-    console.error('Fehler beim Erstellen der Einladung:', error);
-    throw error;
+const existingDIDs = await agent.dids.getCreatedDids();
+  if (existingDIDs.length === 0) {
+    await importDID();
   }
-}
+console.log('Erstellte DIDs:', existingDIDs);
 
-// Funktion: Verbindungen überwachen
-function setupConnectionListener(agent: Agent) {
-  agent.events.on<ConnectionStateChangedEvent>(ConnectionEventTypes.ConnectionStateChanged, ({ payload }) => {
-    const connectionId = payload.connectionRecord.id;
-    activeConnections[connectionId] = {
-      state: payload.connectionRecord.state,
-      connectionRecord: payload.connectionRecord,
-    };
-
-    console.log(`Verbindung aktualisiert: ID=${connectionId}, State=${payload.connectionRecord.state}`);
-
-    if (payload.connectionRecord.state === DidExchangeState.Completed) {
-      console.log(`Verbindung abgeschlossen: ID=${connectionId}`);
+const openid4vcIssuer = await agent.modules.openId4VcIssuer.createIssuer({
+  display: [
+    {
+      name: 'Test Issuer',
+      description: 'This is my SSI Prototype test issuer',
+      text_color: '#000000',
+      background_color: '#FFFFFF',
     }
-  });
-}
+  ],
+  credentialsSupported: [
+    {
+      format: 'vc+sd-jwt',
+      vct: 'Test Issuer',
+      id: 'Test Issuer',
+      cryptographic_binding_methods_supported: ['did:indy'],
+      cryptographic_suites_supported: [JwaSignatureAlgorithm.ES256]
+    }
+  ]
+})
 
-// Initialisiere Agent und überwache Verbindungen
-initializeAgent();
-setupConnectionListener(agent);
+const { credentialOffer, issuanceSession } = await agent.modules.openId4VcIssuer.createCredentialOffer({
+  issuerId: openid4vcIssuer.issuerId,
+  offeredCredentials: ['Test Issuer'],
+  preAuthorizedCodeFlowConfig: {
+    userPinRequired: false
+  },
+})
+
+agent.events.on<OpenId4VcIssuanceSessionStateChangedEvent>(OpenId4VcIssuerEvents.IssuanceSessionStateChanged, (event) => {
+  if (event.payload.issuanceSession.id === issuanceSession.id) {
+    // the connection is now ready for usage in other protocols!
+    console.log(`Issuance session state changed to `, event.payload.issuanceSession.state)
+
+    // Custom business logic can be included here
+    // In this example we can send a basic message to the connection, but
+    // anything is possible
+
+    // We exit the flow
+  }
+})
 
 // Express-App erstellen
 const app = express();
-
 // Middleware
 app.use(express.json());
 app.use(cors({ origin: 'http://localhost:4000', methods: ['GET', 'POST'], allowedHeaders: ['Content-Type'] }));
 
+app.use('/oid4vci', issuerRouter)
+app.use('/siop', verifierRouter)
+
 // Endpunkt: Basis-Check
-app.get('/', (req: Request, res: Response) => {
+issuerRouter.get('/', (req: Request, res: Response) => {
   res.send('Server läuft!');
 });
 
 // Endpunkt: Einladung erstellen
-app.get('/create-invitation', async (req: Request, res: Response) => {
+issuerRouter.get('/create-invitation', async (req: Request, res: Response) => {
   try {
-    const invitation = await createInvitation();
+    const invitation = await createNewInvitation(agent);
     res.status(200).json(invitation);
   } catch (error) {
     res.status(500).json({ error: 'Fehler beim Erstellen der Einladung' });
