@@ -6,7 +6,6 @@ import { AskarModule } from '@credo-ts/askar';
 import { ariesAskar } from '@hyperledger/aries-askar-nodejs';
 import { IndyVdrIndyDidRegistrar, IndyVdrIndyDidResolver, IndyVdrModule } from '@credo-ts/indy-vdr';
 import { indyVdr } from '@hyperledger/indy-vdr-nodejs';
-import nacl from 'tweetnacl'
 import fs from 'fs';
 import * as dotenv from 'dotenv'
 import { W3cJsonLdCredentialService } from '@credo-ts/core/build/modules/vc/data-integrity/W3cJsonLdCredentialService';
